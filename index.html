@@ -1687,6 +1687,8 @@ $("#syncForm").addEventListener("submit",async e=>{
   try{
     const r=await gh("");
     if(!r.ok)throw ghErr(r,"Couldn't reach that repo.");
+    const info=await r.json().catch(()=>({}));
+    if(info.private===false){const e=new Error(repo+" is public, so anyone could see your tasks and images. Use a private repo for sync.");throw e}
     try{localStorage.setItem(SYNC_KEY,JSON.stringify(SY.cfg))}catch(x){}
     if(!prev||prev.repo!==repo)lsDel(BASE_KEY);
     closeSync();toast("Sync is on. Bringing your devices together…");
