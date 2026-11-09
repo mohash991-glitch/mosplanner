@@ -449,6 +449,7 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
     <span class="sync" id="sync"><i></i><span id="syncTxt">Saved on this device</span><span id="savedAt"></span></span>
     <span>
       <button class="mini" id="clockBtn" type="button">24-hour clock</button>
+      <button class="mini" id="syncBtn" type="button">Turn on sync</button>
       <button class="mini" id="backupBtn" type="button">Back up</button>
       <button class="mini" id="restoreBtn" type="button">Restore</button>
       <input id="restoreFile" type="file" accept="application/json,.json" hidden>
@@ -512,6 +513,27 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
       <div class="sheet-actions">
         <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
         <button type="submit" class="btn btn-primary" id="saveBtn">Add task</button>
+      </div>
+    </form>
+  </div>
+</div>
+<div class="overlay" id="syncOverlay" hidden>
+  <div class="sheet shard" role="dialog" aria-modal="true" aria-labelledby="syncTitle">
+    <h2 id="syncTitle">Sync</h2>
+    <p class="hint" id="sStatus" style="margin:4px 0 0"></p>
+    <form id="syncForm" novalidate>
+      <div class="field"><label class="label" for="sRepo">Private data repo</label>
+        <input id="sRepo" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="owner/repo"></div>
+      <div class="field"><label class="label" for="sToken">GitHub access key</label>
+        <input id="sToken" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <span class="hint">Use a key limited to this repo with Contents: Read and write. It's stored only on this device.</span>
+        <span class="err" id="sErr" hidden></span></div>
+      <div class="sheet-actions" style="flex-wrap:wrap">
+        <button type="button" class="btn btn-ghost" id="sDisconnect" hidden>Turn off</button>
+        <button type="button" class="btn btn-ghost" id="sNow" hidden>Sync now</button>
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-ghost" id="sCancel">Close</button>
+        <button type="submit" class="btn btn-primary" id="sSave">Connect</button>
       </div>
     </form>
   </div>
@@ -599,11 +621,13 @@ function lsGet(k){
   if(KV.db&&isBig(k))return KV.mem.has(k)?KV.mem.get(k):null;
   try{const v=localStorage.getItem(k);return v?JSON.parse(v):null}catch(e){return null}
 }
+const isSynced=k=>/^tidecrest\.(tasks|thumbs|banner|portal)\./.test(k);
 function lsSet(k,v){
+  if(isSynced(k)&&window.__mpDirty)window.__mpDirty();
   if(KV.db&&isBig(k)){KV.mem.set(k,v);kvWrite(k,v);return true}
   try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}
 }
-function lsDel(k){KV.mem.delete(k);if(KV.db)kvWrite(k,undefined);try{localStorage.removeItem(k)}catch(e){}}
+function lsDel(k){if(isSynced(k)&&window.__mpDirty)window.__mpDirty();KV.mem.delete(k);if(KV.db)kvWrite(k,undefined);try{localStorage.removeItem(k)}catch(e){}}
 function kvWrite(k,v){
   try{const tx=KV.db.transaction("kv","readwrite"),st=tx.objectStore("kv");
     if(v===undefined)st.delete(k);else st.put(JSON.parse(JSON.stringify(v)),k);
@@ -723,6 +747,7 @@ function bodyOf(t){const {id,local,...b}=t;return b}
 function persistLocal(){lsSet(LS_TASKS,state.tasks.filter(t=>!(t.sample&&t._mem)))}
 function saveTask(t){
   const i=state.tasks.findIndex(x=>x.id===t.id);
+  t.updated=Date.now();
   if(i>=0)state.tasks[i]=t;else state.tasks.push(t);
   delete t._mem;
   if(state.mode==="db"){const b=bodyOf(t);queueWrite(t.id,()=>col.doc(t.id).set(b))}
@@ -1311,7 +1336,7 @@ function saveBanner(src,crop){
   state.banner=src;state.bannerCrop=src?normCrop(crop):null;renderBanner();
   const body={src,crop:state.bannerCrop,updated:Date.now()};
   if(state.mode==="db"&&settingsDoc){queueWrite("banner",()=>src?settingsDoc.set(body):settingsDoc.delete())}
-  else if(!lsSet(LS_BANNER,src?{src,crop:state.bannerCrop}:""))toast("This device's storage is full, so the banner won't be kept after closing.");
+  else if(!lsSet(LS_BANNER,src?{src,crop:state.bannerCrop,updated:Date.now()}:""))toast("This device's storage is full, so the banner won't be kept after closing.");
 }
 const bannerEditor=(src,crop)=>openCropper({src,crop,shape:"rect",aspect:bannerAspect(),title:"Position banner",setLabel:"Set banner"});
 $("#bannerSet").addEventListener("click",()=>$("#bFile").click());
@@ -1429,13 +1454,13 @@ function savePortal(src,crop){
   state.portal=src;state.portalCrop=src?normCrop(crop):null;renderPortal();
   const body={src,crop:state.portalCrop,pos:state.portalPos,updated:Date.now()};
   if(state.mode==="db"&&portalDoc){queueWrite("portal",()=>src?portalDoc.set(body):portalDoc.delete())}
-  else if(!lsSet(LS_PORTAL,src?{src,crop:state.portalCrop,pos:state.portalPos}:""))toast("This device's storage is full, so the centerpiece won't be kept after closing.");
+  else if(!lsSet(LS_PORTAL,src?{src,crop:state.portalCrop,pos:state.portalPos,updated:Date.now()}:""))toast("This device's storage is full, so the centerpiece won't be kept after closing.");
 }
 function commitPortalPos(){
   state.portalPos=clampPos(state.portalPos);placePortal();startSky();
   if(!state.portal)return;
   if(state.mode==="db"&&portalDoc){const pos=state.portalPos;queueWrite("portal",()=>portalDoc.update({pos,updated:Date.now()}))}
-  else lsSet(LS_PORTAL,{src:state.portal,crop:state.portalCrop,pos:state.portalPos});
+  else lsSet(LS_PORTAL,{src:state.portal,crop:state.portalCrop,pos:state.portalPos,updated:Date.now()});
 }
 (function(){
   const f=$("#pframe"),portal=$("#portal");let d=null;
@@ -1457,6 +1482,228 @@ $("#pFile").addEventListener("change",async e=>{const f=e.target.files&&e.target
   let src;try{src=await fileToImage(f)}catch(err){toast("Couldn't read that image. Try a JPG or PNG.");return}
   const c=await portalEditor(src,null);
   if(c){savePortal(src,c);toast("Centerpiece updated")}else toast("Centerpiece not changed");});
+
+/* ---------- GitHub sync (phone and Mac share one private repo) ---------- */
+const SYNC_KEY="mosplanner.sync", BASE_KEY="tidecrest.syncbase.v1";
+const SY={cfg:null,busy:false,again:false,timer:null,applying:false,last:0,err:"",poll:null};
+try{SY.cfg=JSON.parse(localStorage.getItem(SYNC_KEY)||"null")}catch(e){SY.cfg=null}
+
+function stable(v){
+  if(v===undefined)return "null";
+  if(v===null||typeof v!=="object")return JSON.stringify(v);
+  if(Array.isArray(v))return "["+v.map(stable).join(",")+"]";
+  return "{"+Object.keys(v).sort().filter(k=>v[k]!==undefined).map(k=>JSON.stringify(k)+":"+stable(v[k])).join(",")+"}";
+}
+function fnv(str){let h=0x811c9dc5;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(36)}
+const hashOf=v=>v==null?null:fnv(stable(v))+"."+stable(v).length;
+function imgKey(src){const m=/^data:image\/(\w+)/.exec(src||"");const ext=m?(m[1]==="jpeg"?"jpg":m[1]):"jpg";return "i"+fnv(src)+"-"+src.length.toString(36)+"."+ext}
+
+/* local data in the shape stored in the repo */
+function localSnapshot(){
+  const imgs={},tasks={},thumbs={};
+  for(const t of state.tasks){if(t._mem)continue;const r=Object.assign({},t);delete r.id;delete r.local;delete r._mem;tasks[t.id]=r}
+  for(const th of state.thumbs){if(!th.src)continue;const k=imgKey(th.src);imgs[k]=th.src;thumbs[th.id]={name:th.name||"",created:th.created||0,img:k}}
+  const b=lsGet(LS_BANNER),p=lsGet(LS_PORTAL);
+  let banner=null,portal=null;
+  if(b&&b.src){const k=imgKey(b.src);imgs[k]=b.src;banner={img:k,crop:b.crop||null,updated:b.updated||0}}
+  if(p&&p.src){const k=imgKey(p.src);imgs[k]=p.src;portal={img:k,crop:p.crop||null,pos:typeof p.pos==="number"?p.pos:state.portalPos,updated:p.updated||0}}
+  return{data:{v:1,tasks,thumbs,banner,portal},imgs};
+}
+
+/* three-way merge per record, against what both sides agreed on at the last sync */
+function mergeMaps(L,Rm,B){
+  const out={},ids=new Set([...Object.keys(L||{}),...Object.keys(Rm||{}),...Object.keys(B||{})]);
+  for(const id of ids){const r=mergeOne(L&&L[id],Rm&&Rm[id],B&&B[id]);if(r!=null)out[id]=r}
+  return out;
+}
+function mergeOne(l,r,b){
+  const lh=hashOf(l),rh=hashOf(r);b=b===undefined?null:b;
+  if(lh===rh)return l==null?null:l;
+  if(rh===b)return l==null?null:l;      // only this device changed it
+  if(lh===b)return r==null?null:r;      // only the other device changed it
+  if(l==null)return r;                  // deleted here, edited there: keep the edit
+  if(r==null)return l;
+  return (r.updated||0)>(l.updated||0)?r:l; // both edited: newest wins
+}
+const baseOf=d=>({tasks:Object.fromEntries(Object.entries(d.tasks||{}).map(([k,v])=>[k,hashOf(v)])),
+  thumbs:Object.fromEntries(Object.entries(d.thumbs||{}).map(([k,v])=>[k,hashOf(v)])),banner:hashOf(d.banner),portal:hashOf(d.portal)});
+
+/* GitHub contents API */
+function gh(path,opt){
+  opt=opt||{};
+  const h={"Authorization":"Bearer "+SY.cfg.token,"Accept":opt.raw?"application/vnd.github.raw":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"};
+  if(opt.body)h["Content-Type"]="application/json";
+  return fetch("https://api.github.com/repos/"+SY.cfg.repo+path,{method:opt.method||"GET",headers:h,body:opt.body?JSON.stringify(opt.body):undefined,cache:"no-store"});
+}
+function ghErr(res,what){
+  const e=new Error(what);e.status=res.status;
+  if(res.status===401)e.message="The access key was rejected. Create a new key and paste it again.";
+  else if(res.status===404)e.message="Can't find "+SY.cfg.repo+", or the key doesn't include it.";
+  else if(res.status===403)e.message="The key can't write to "+SY.cfg.repo+". Give it Contents: Read and write.";
+  else if(res.status===409||res.status===422)e.retry=true;
+  return e;
+}
+const b64utf8=s=>{const by=new TextEncoder().encode(s);let bin="";for(let i=0;i<by.length;i+=0x8000)bin+=String.fromCharCode.apply(null,by.subarray(i,i+0x8000));return btoa(bin)};
+const utf8b64=b=>new TextDecoder().decode(Uint8Array.from(atob(b.replace(/\s/g,"")),c=>c.charCodeAt(0)));
+async function getRemote(){
+  const res=await gh("/contents/data.json");
+  if(res.status===404)return{data:null,sha:null};
+  if(!res.ok)throw ghErr(res,"Couldn't read your planner from GitHub.");
+  const j=await res.json();let txt;
+  if(j.content&&j.encoding==="base64")txt=utf8b64(j.content);
+  else{const r2=await gh("/contents/data.json",{raw:true});if(!r2.ok)throw ghErr(r2,"Couldn't read your planner from GitHub.");txt=await r2.text()}
+  return{data:JSON.parse(txt),sha:j.sha};
+}
+async function listImgs(){
+  const res=await gh("/contents/img");
+  if(res.status===404)return new Set();
+  if(!res.ok)throw ghErr(res,"Couldn't list your images on GitHub.");
+  return new Set((await res.json()).map(f=>f.name));
+}
+async function putImg(key,src){
+  const comma=src.indexOf(",");const b64=src.slice(comma+1);
+  const res=await gh("/contents/img/"+key,{method:"PUT",body:{message:"Add image",content:b64}});
+  if(!res.ok&&res.status!==422)throw ghErr(res,"Couldn't upload an image to GitHub.");
+}
+async function getImg(key){
+  const res=await gh("/contents/img/"+key,{raw:true});
+  if(!res.ok)throw ghErr(res,"Couldn't download an image from GitHub.");
+  const ext=key.split(".").pop(),mime="image/"+(ext==="jpg"?"jpeg":ext);
+  const blob=new Blob([await res.arrayBuffer()],{type:mime});
+  return await new Promise((ok,no)=>{const fr=new FileReader();fr.onload=()=>ok(fr.result);fr.onerror=no;fr.readAsDataURL(blob)});
+}
+
+async function syncNow(){
+  if(!SY.cfg||!SY.cfg.token)return;
+  if(SY.busy){SY.again=true;return}
+  SY.busy=true;SY.err="";syncUI();
+  try{
+    for(let attempt=0;attempt<3;attempt++){
+      try{await syncOnce();break}
+      catch(e){if(e.retry&&attempt<2)continue;throw e}
+    }
+    SY.last=Date.now();
+  }catch(e){SY.err=(e&&e.message&&!/fetch|network|load failed/i.test(e.message))?e.message:"Offline. Changes will sync when you're back online."}
+  SY.busy=false;syncUI();
+  if(SY.again){SY.again=false;schedule(800)}
+}
+async function syncOnce(){
+  const base=lsGet(BASE_KEY)||{tasks:{},thumbs:{},banner:null,portal:null};
+  const loc=localSnapshot();
+  const rem=await getRemote();
+  const R=rem.data||{v:1,tasks:{},thumbs:{},banner:null,portal:null};
+  const res={v:1,
+    tasks:mergeMaps(loc.data.tasks,R.tasks,base.tasks),
+    thumbs:mergeMaps(loc.data.thumbs,R.thumbs,base.thumbs),
+    banner:mergeOne(loc.data.banner,R.banner,base.banner),
+    portal:mergeOne(loc.data.portal,R.portal,base.portal)};
+  // images: upload ours that the repo lacks, download theirs that we lack
+  const need=new Set();Object.values(res.thumbs).forEach(t=>need.add(t.img));if(res.banner)need.add(res.banner.img);if(res.portal)need.add(res.portal.img);
+  const have=await listImgs(),srcs=Object.assign({},loc.imgs);
+  for(const k of need){
+    if(!have.has(k)&&srcs[k])await putImg(k,srcs[k]);
+    if(!srcs[k]&&have.has(k))srcs[k]=await getImg(k);
+  }
+  const remoteChanged=stable(res)!==stable(R)||!rem.data;
+  if(remoteChanged){
+    const body={message:"Sync from "+(navigator.platform||"device"),content:b64utf8(JSON.stringify(res))};
+    if(rem.sha)body.sha=rem.sha;
+    const put=await gh("/contents/data.json",{method:"PUT",body});
+    if(!put.ok)throw ghErr(put,"Couldn't save your planner to GitHub.");
+  }
+  applyResult(res,srcs,loc.data);
+  lsSet(BASE_KEY,baseOf(res));
+}
+function applyResult(res,srcs,before){
+  SY.applying=true;
+  try{
+    const hasDemo=state.tasks.some(t=>t._mem)&&Object.keys(res.tasks).length>0;
+    if(hasDemo||stable(res.tasks)!==stable(before.tasks)){
+      state.tasks=Object.entries(res.tasks).map(([id,r])=>Object.assign({id},r,{local:true}));
+      persistLocal();
+    }
+    if(stable(res.thumbs)!==stable(before.thumbs)){
+      state.thumbs=Object.entries(res.thumbs).filter(([id,t])=>srcs[t.img]).map(([id,t])=>({id,name:t.name,created:t.created,src:srcs[t.img]}));
+      lsSet(LS_THUMBS,state.thumbs);
+    }
+    if(stable(res.banner)!==stable(before.banner)){
+      const b=res.banner;
+      if(b&&srcs[b.img]){state.banner=srcs[b.img];state.bannerCrop=normCrop(b.crop);lsSet(LS_BANNER,{src:state.banner,crop:state.bannerCrop,updated:b.updated||0})}
+      else if(!b){state.banner="";state.bannerCrop=null;lsSet(LS_BANNER,"")}
+      renderBanner();
+    }
+    if(stable(res.portal)!==stable(before.portal)){
+      const p=res.portal;
+      if(p&&srcs[p.img]){state.portal=srcs[p.img];state.portalCrop=normCrop(p.crop);if(typeof p.pos==="number")state.portalPos=p.pos;
+        lsSet(LS_PORTAL,{src:state.portal,crop:state.portalCrop,pos:state.portalPos,updated:p.updated||0})}
+      else if(!p){state.portal="";state.portalCrop=null;lsSet(LS_PORTAL,"")}
+      renderPortal();startSky();
+    }
+    if(overlay.hidden)render();
+  }finally{SY.applying=false}
+}
+function schedule(ms){if(!SY.cfg)return;clearTimeout(SY.timer);SY.timer=setTimeout(syncNow,ms)}
+window.__mpDirty=()=>{if(!SY.applying)schedule(2500)};
+
+/* footer status + settings sheet */
+function syncUI(){
+  const el=$("#sync"),t=$("#syncTxt");if(!el||!t)return;
+  if(!SY.cfg){el.classList.remove("on");t.textContent="Saved on this device";}
+  else if(SY.busy){el.classList.add("on");t.textContent="Syncing…"}
+  else if(SY.err){el.classList.remove("on");t.textContent="Sync paused: "+SY.err}
+  else if(SY.last){el.classList.add("on");const d=new Date(SY.last);t.textContent="Synced "+fmtTime(d.getHours()*60+d.getMinutes())}
+  else{el.classList.add("on");t.textContent="Sync on"}
+  $("#savedAt").textContent="";
+  $("#syncBtn").textContent=SY.cfg?"Sync settings":"Turn on sync";
+  const st=$("#sStatus");if(st)st.textContent=SY.cfg?(SY.busy?"Syncing now…":SY.err?SY.err:SY.last?"Last synced "+new Date(SY.last).toLocaleString("en-GB",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short"}):"Connected"):"Sync is off. Your planner is saved on this device only.";
+  const dc=$("#sDisconnect");if(dc)dc.hidden=!SY.cfg;
+  const sn=$("#sNow");if(sn)sn.hidden=!SY.cfg;
+}
+const syncOv=$("#syncOverlay");
+function openSync(){
+  $("#sRepo").value=(SY.cfg&&SY.cfg.repo)||"mohash991-glitch/mosplanner-data";
+  $("#sToken").value="";$("#sToken").placeholder=SY.cfg?"Saved. Paste a new key to replace it":"Paste your GitHub access key";
+  $("#sErr").hidden=true;syncOv.hidden=false;syncUI();setTimeout(()=>$("#sToken").focus(),40);
+}
+function closeSync(){syncOv.hidden=true}
+$("#syncBtn").addEventListener("click",openSync);
+$("#sCancel").addEventListener("click",closeSync);
+syncOv.addEventListener("click",e=>{if(e.target===syncOv)closeSync()});
+document.addEventListener("keydown",e=>{if(!syncOv.hidden&&e.key==="Escape"){e.stopPropagation();closeSync()}},true);
+$("#sNow").addEventListener("click",()=>syncNow());
+$("#sDisconnect").addEventListener("click",()=>{
+  SY.cfg=null;SY.err="";SY.last=0;try{localStorage.removeItem(SYNC_KEY)}catch(e){}lsDel(BASE_KEY);
+  syncUI();closeSync();toast("Sync turned off on this device. Your planner stays here.");
+});
+$("#syncForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const repo=$("#sRepo").value.trim().replace(/^https?:\/\/github\.com\//,"").replace(/\.git$/,"").replace(/\/$/,"");
+  const token=$("#sToken").value.trim()||(SY.cfg&&SY.cfg.token)||"";
+  const err=$("#sErr");
+  if(!/^[\w.-]+\/[\w.-]+$/.test(repo)){err.textContent="Enter the repo as owner/name, for example mohash991-glitch/mosplanner-data.";err.hidden=false;return}
+  if(!token){err.textContent="Paste your GitHub access key.";err.hidden=false;return}
+  const prev=SY.cfg;SY.cfg={repo,token};
+  $("#sSave").disabled=true;$("#sSave").textContent="Checking…";
+  try{
+    const r=await gh("");
+    if(!r.ok)throw ghErr(r,"Couldn't reach that repo.");
+    try{localStorage.setItem(SYNC_KEY,JSON.stringify(SY.cfg))}catch(x){}
+    if(!prev||prev.repo!==repo)lsDel(BASE_KEY);
+    closeSync();toast("Sync is on. Bringing your devices together…");
+    await syncNow();
+    if(!SY.err)toast("Synced");
+  }catch(x){
+    SY.cfg=prev;err.textContent=(x&&x.message&&!/fetch|network|load failed/i.test(x.message))?x.message:"Couldn't reach GitHub. Check your connection and try again.";err.hidden=false;
+  }finally{$("#sSave").disabled=false;$("#sSave").textContent="Connect";syncUI()}
+});
+function syncInit(){
+  syncUI();
+  if(!SY.cfg)return;
+  syncNow();
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)schedule(300)});
+  addEventListener("online",()=>schedule(300));
+  SY.poll=setInterval(()=>{if(!document.hidden)syncNow()},60000);
+}
 
 /* Backup and restore (move your planner between devices) */
 function backupData(){return{app:"mos-planner",v:1,at:new Date().toISOString(),tasks:state.tasks.filter(t=>!t._mem),thumbs:state.thumbs,
@@ -1502,6 +1749,7 @@ setSync();renderQuote();render();startSky();
 setInterval(()=>{if(overlay.hidden&&!delArm){renderTimeline();renderSide()}},30000);
 setInterval(()=>{const d=todayISO();if(d!==lastDay){if(state.view===lastDay)state.view=d;lastDay=d;state.quote=dayQuote();renderQuote();render()}},60000);
 connect();
+syncInit();
 }
 boot();
 if("serviceWorker" in navigator&&location.protocol==="https:"){addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}))}
