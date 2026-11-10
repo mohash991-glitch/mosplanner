@@ -324,7 +324,21 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
 }
 #refreshBtn.spin svg{animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-@media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}.side{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}}
+@media (max-width:900px){
+  .grid{grid-template-columns:minmax(0,1fr)}
+  /* on narrower screens the day report and quote come first, above the schedule */
+  .side{order:-1;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .side>article:last-child{order:-2}
+  .side>.quote{order:-1}
+  .side>.next{order:0}
+}
+@media (max-width:560px){
+  .quote{padding:16px 16px 14px}
+  .quote blockquote{font-size:16.5px;margin-top:10px}
+  .side .panel{padding:14px 16px}
+  .side .stats{gap:14px}
+  .side .ring{width:84px;height:84px}
+}
 @media (max-width:560px){
   .field input,.field select,.field textarea{font-size:16px}
   .board{padding:16px 12px 20px}
