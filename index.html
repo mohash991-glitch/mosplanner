@@ -24,7 +24,7 @@
   --f-display:"Dela Gothic One","Arial Black",system-ui,sans-serif;
   --f-body:"Zen Kaku Gothic New","Hiragino Sans","Segoe UI",system-ui,sans-serif;
   --f-data:"Chakra Petch",ui-monospace,"SF Mono",Menlo,monospace;
-  --tcol:64px;
+  --tcol:clamp(44px, 11vw, 64px);
 }
 
 :root[data-mode="light"]{
@@ -145,7 +145,7 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
 .check svg{position:relative;width:14px;height:14px;opacity:0;transform:scale(.4);transition:all .2s}
 .task.is-done .check::before{background:linear-gradient(160deg,var(--violet),var(--tide))}
 .task.is-done .check svg{opacity:1;transform:none}
-.t-title{margin:2px 0 0;flex:1;min-width:0;font-size:16px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+.t-title{margin:2px 0 0;flex:1;min-width:0;font-size:16px;font-weight:700;line-height:1.35;overflow-wrap:break-word;word-break:normal;hyphens:manual}
 .task.is-done .t-title{color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(169,139,255,.6)}
 .rank{flex:none;font-family:var(--f-display);font-size:13px;line-height:1;padding:5px 9px 4px;color:var(--void);background:var(--rank);transform:skewX(-12deg);white-space:nowrap}
 .rank span{display:inline-block;transform:skewX(12deg)}
@@ -299,18 +299,35 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
 .crop{display:grid;grid-template-columns:96px minmax(0,1fr);gap:14px;align-items:center;margin-top:10px;padding:10px;background:rgba(255,255,255,.04);border:1px solid var(--edge)}
 .crop-prev{width:96px;height:96px}
 .crop-ctl{display:grid;gap:6px;min-width:0}
+
+/* Task cards size themselves to the space they get (any phone, tablet or desktop window) */
+.task{container:task / inline-size}
+@container task (max-width: 640px){
+  .t-card{padding:12px clamp(10px,3cqi,16px) 10px}
+  .t-card.has-thumb{padding-left:clamp(10px,3cqi,16px);min-height:0;display:grid;grid-template-columns:clamp(60px,20cqi,104px) minmax(0,1fr);column-gap:clamp(10px,3cqi,14px);align-items:start}
+  .t-card.has-thumb>.t-thumb{position:relative;left:auto;top:auto;width:100%;height:auto;aspect-ratio:1;grid-column:1;grid-row:1 / span 2}
+  .t-card.has-thumb>.t-top,.t-card.has-thumb>.t-meta{grid-column:2}
+  .t-card.has-thumb>.deliv,.t-card.has-thumb>.t-foot{grid-column:1 / -1}
+  .t-top{flex-wrap:wrap;gap:6px 10px}
+  .t-top .t-title{flex:1 1 calc(100% - 40px);font-size:clamp(14.5px,3.4cqi,16px)}
+  .t-top .rank{order:3;margin-left:38px;font-size:11px;padding:4px 8px 3px}
+  .t-top .rank small{font-size:9px}
+  .check{width:26px;height:26px}
+  .t-meta,.deliv,.t-foot{padding-left:0}
+  .t-meta{gap:4px 10px}
+}
+@container task (max-width: 380px){
+  .t-act button{padding:4px 6px;letter-spacing:.04em}
+}
+@container task (max-width: 300px){
+  .t-top .rank small{display:none}
+}
 #refreshBtn.spin svg{animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}.side{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}}
 @media (max-width:560px){
-  :root{--tcol:50px}
   .field input,.field select,.field textarea{font-size:16px}
-  .t-thumb{width:84px;height:84px}
-  .t-card.has-thumb{padding-left:108px;min-height:110px}
-  .t-card.has-thumb>.t-thumb{left:12px;top:12px}
   .board{padding:16px 12px 20px}
-  .t-card{padding:12px 12px 10px}
-  .t-meta,.deliv,.t-foot{padding-left:0}
   .row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .row .field:first-child{grid-column:1/-1}
   .power{max-width:none}
