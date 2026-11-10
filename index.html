@@ -965,7 +965,7 @@ function renderWeek(){
       <span class="w">${x.toLocaleDateString("en-GB",{weekday:"short"})}</span><span class="n">${x.getDate()}</span>
       <span class="pips"><i style="width:${list.length?Math.max(pct,6):0}%;${list.length&&!done?"background:var(--violet);opacity:.5;width:100%":""}"></i></span></button>`;
   }
-  $("#week").innerHTML=h;
+  const wk=$("#week");if(wk.__html!==h){wk.__html=h;wk.innerHTML=h}
 }
 function renderNotices(){
   let h="";
@@ -1011,7 +1011,7 @@ function renderTimeline(){
   const el=$("#timeline");
   if(!list.length){
     const any=dayTasks(state.view).length;
-    el.innerHTML=`<li class="empty"><svg><use href="#emblem"/></svg><h3>${any?"Nothing in this view":"A calm sea"}</h3><p>${any?"Switch the filter to see the rest of the day.":"No tasks on this day yet. Add one with its time and deliverables to start the quest."}</p>${any?"":`<button type="button" class="btn btn-primary" data-act="new">Add a task</button>`}</li>`;
+    el.__html="";el.innerHTML=`<li class="empty"><svg><use href="#emblem"/></svg><h3>${any?"Nothing in this view":"A calm sea"}</h3><p>${any?"Switch the filter to see the rest of the day.":"No tasks on this day yet. Add one with its time and deliverables to start the quest."}</p>${any?"":`<button type="button" class="btn btn-primary" data-act="new">Add a task</button>`}</li>`;
     return;
   }
   const isToday=state.view===todayISO(), n=nowMin();
@@ -1022,7 +1022,8 @@ function renderTimeline(){
     h+=taskHTML(k);
   }
   if(!placed)h+=nowHTML(n);
-  el.innerHTML=h;
+  if(el.__html===h)return;
+  el.__html=h;el.innerHTML=h;
   fitAll(el);
 }
 const nowHTML=n=>`<li class="nowline" aria-label="Current time"><div class="t-time"><b>NOW</b><span>${esc(fmtTime(n))}</span></div><div class="dot"></div><div class="rule" style="margin-top:0"></div></li>`;
@@ -1063,7 +1064,20 @@ function renderQuote(){
   const q=QUOTES[state.quote];
   $("#qText").textContent=q.q;$("#qWho").textContent=q.w;$("#qSrc").textContent=q.s;$("#qKind").textContent=q.k;
 }
-function render(){
+/* Redraw without moving what the reader is looking at */
+function keepPlace(fn){
+  let anchor=null,top=0;
+  for(const e of document.querySelectorAll(".task[data-id], .side>article, .board-head, .nowline")){
+    const r=e.getBoundingClientRect();if(r.bottom>4){anchor=e;top=r.top;break}
+  }
+  const id=anchor&&anchor.dataset&&anchor.dataset.id;
+  fn();
+  if(!anchor||window.scrollY<2)return;
+  const a2=id?document.querySelector('.task[data-id="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]'):anchor;
+  if(a2&&a2.isConnected){const d=a2.getBoundingClientRect().top-top;if(Math.abs(d)>1)window.scrollBy(0,d)}
+}
+function render(){keepPlace(renderAll)}
+function renderAll(){
   renderPower();renderDay();renderWeek();renderNotices();renderTimeline();renderSide();
   document.querySelectorAll("[data-filter]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.filter===state.filter));
   document.querySelectorAll("[data-sort]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.sort===state.sort));
@@ -1654,12 +1668,13 @@ async function syncOnce(){
 function applyResult(res,srcs,before){
   SY.applying=true;
   try{
+    let changed=false;
     const hasDemo=state.tasks.some(t=>t._mem)&&Object.keys(res.tasks).length>0;
-    if(hasDemo||stable(res.tasks)!==stable(before.tasks)){
+    if(hasDemo||stable(res.tasks)!==stable(before.tasks)){changed=true;
       state.tasks=Object.entries(res.tasks).map(([id,r])=>Object.assign({id},r,{local:true}));
       persistLocal();
     }
-    if(stable(res.thumbs)!==stable(before.thumbs)){
+    if(stable(res.thumbs)!==stable(before.thumbs)){changed=true;
       state.thumbs=Object.entries(res.thumbs).filter(([id,t])=>srcs[t.img]).map(([id,t])=>({id,name:t.name,created:t.created,src:srcs[t.img]}));
       lsSet(LS_THUMBS,state.thumbs);
     }
@@ -1676,7 +1691,7 @@ function applyResult(res,srcs,before){
       else if(!p){state.portal="";state.portalCrop=null;lsSet(LS_PORTAL,"")}
       renderPortal();startSky();
     }
-    if(overlay.hidden)render();
+    if(changed&&overlay.hidden)render();
   }finally{SY.applying=false}
 }
 function schedule(ms){if(!SY.cfg)return;clearTimeout(SY.timer);SY.timer=setTimeout(syncNow,ms)}
@@ -1798,7 +1813,7 @@ state.thumbs=lsGet(LS_THUMBS)||[];
 {const b=readSetting(lsGet(LS_BANNER));state.banner=b.src;state.bannerCrop=b.crop;renderBanner();}
 {const p=readSetting(lsGet(LS_PORTAL));state.portal=p.src;state.portalCrop=p.crop;if(p.pos!=null)state.portalPos=p.pos;renderPortal();}
 setSync();renderQuote();render();startSky();
-setInterval(()=>{if(overlay.hidden&&!delArm){renderTimeline();renderSide()}},30000);
+setInterval(()=>{if(overlay.hidden&&!delArm)keepPlace(()=>{renderTimeline();renderSide()})},30000);
 setInterval(()=>{const d=todayISO();if(d!==lastDay){if(state.view===lastDay)state.view=d;lastDay=d;state.quote=dayQuote();renderQuote();render()}},60000);
 connect();
 syncInit();
