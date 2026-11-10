@@ -299,6 +299,8 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
 .crop{display:grid;grid-template-columns:96px minmax(0,1fr);gap:14px;align-items:center;margin-top:10px;padding:10px;background:rgba(255,255,255,.04);border:1px solid var(--edge)}
 .crop-prev{width:96px;height:96px}
 .crop-ctl{display:grid;gap:6px;min-width:0}
+#refreshBtn.spin svg{animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}.side{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}}
 @media (max-width:560px){
   :root{--tcol:50px}
@@ -350,6 +352,7 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+    <button class="icon-btn" id="refreshBtn" type="button" aria-label="Refresh" title="Refresh from your other devices"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.35-5.65M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="icon-btn" id="modeBtn" type="button" aria-label="Switch to light mode" title="Light / dark mode">
       <svg id="modeIco" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"></svg>
     </button>
@@ -1573,9 +1576,12 @@ async function getImg(key){
   return await new Promise((ok,no)=>{const fr=new FileReader();fr.onload=()=>ok(fr.result);fr.onerror=no;fr.readAsDataURL(blob)});
 }
 
-async function syncNow(){
-  if(!SY.cfg||!SY.cfg.token)return;
-  if(SY.busy){SY.again=true;return}
+function syncNow(){
+  if(!SY.cfg||!SY.cfg.token)return Promise.resolve();
+  if(SY.busy){SY.again=true;return SY.running}
+  SY.running=syncRun();return SY.running;
+}
+async function syncRun(){
   SY.busy=true;SY.err="";syncUI();
   try{
     for(let attempt=0;attempt<3;attempt++){
@@ -1585,7 +1591,7 @@ async function syncNow(){
     SY.last=Date.now();
   }catch(e){SY.err=(e&&e.message&&!/fetch|network|load failed/i.test(e.message))?e.message:"Offline. Changes will sync when you're back online."}
   SY.busy=false;syncUI();
-  if(SY.again){SY.again=false;schedule(800)}
+  if(SY.again){SY.again=false;await syncRun()}
 }
 async function syncOnce(){
   const base=lsGet(BASE_KEY)||{tasks:{},thumbs:{},banner:null,portal:null};
@@ -1703,9 +1709,22 @@ function syncInit(){
   if(!SY.cfg)return;
   syncNow();
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)schedule(300)});
+  addEventListener("focus",()=>schedule(300));
   addEventListener("online",()=>schedule(300));
-  SY.poll=setInterval(()=>{if(!document.hidden)syncNow()},60000);
+  SY.poll=setInterval(()=>{if(!document.hidden)syncNow()},20000);
 }
+
+/* Refresh button: pull the latest from your other devices now */
+$("#refreshBtn").addEventListener("click",async()=>{
+  const b=$("#refreshBtn");if(b.classList.contains("spin"))return;
+  if(!SY.cfg){render();toast("Sync is off. Turn it on at the bottom of the page to refresh from your other devices.");return}
+  b.classList.add("spin");b.setAttribute("aria-busy","true");
+  const t0=Date.now();
+  await syncNow();
+  const wait=Math.max(0,600-(Date.now()-t0));
+  setTimeout(()=>{b.classList.remove("spin");b.removeAttribute("aria-busy");
+    render();toast(SY.err?"Couldn't refresh: "+SY.err:"Up to date");},wait);
+});
 
 /* Backup and restore (move your planner between devices) */
 function backupData(){return{app:"mos-planner",v:1,at:new Date().toISOString(),tasks:state.tasks.filter(t=>!t._mem),thumbs:state.thumbs,
