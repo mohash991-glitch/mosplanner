@@ -313,7 +313,8 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
   .t-top .rank{order:3;margin-left:38px;font-size:11px;padding:4px 8px 3px}
   .t-top .rank small{font-size:9px}
   .check{width:26px;height:26px}
-  .t-meta,.deliv,.t-foot{padding-left:0}
+  .t-meta,.deliv,.t-foot,.t-card .t-fb,.t-card .fb-note,.t-card .fb-edit{padding-left:0}
+  .t-card.has-thumb>.t-fb,.t-card.has-thumb>.fb-note,.t-card.has-thumb>.fb-edit{grid-column:1 / -1}
   .t-meta{gap:4px 10px}
 }
 @container task (max-width: 380px){
@@ -322,6 +323,25 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
 @container task (max-width: 300px){
   .t-top .rank small{display:none}
 }
+
+/* Feedback strip under each task */
+.t-fb{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-left:40px}
+.fb-l{font-family:var(--f-data);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-right:2px}
+.fb-chip{border:1px solid var(--edge);background:transparent;color:var(--muted);font-size:12px;line-height:1.2;padding:4px 10px;border-radius:3px;transition:background .15s,border-color .15s,color .15s}
+.fb-chip:hover{border-color:var(--fc);color:var(--ink)}
+.fb-chip.on{background:color-mix(in srgb,var(--fc) 24%,transparent);border-color:var(--fc);color:var(--ink);font-weight:700}
+.fb-note-btn{border:0;background:none;color:var(--faint);font-size:12px;text-decoration:underline;text-underline-offset:3px;padding:4px 4px}
+.fb-note-btn:hover{color:var(--ink)}
+.fb-note{margin:0;padding-left:40px;font-size:13px;line-height:1.45;color:var(--muted);white-space:pre-wrap;overflow-wrap:break-word}
+.fb-note::before{content:"Note · ";font-family:var(--f-data);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.fb-edit{padding-left:40px;display:grid;gap:6px}
+.fb-edit textarea{width:100%;box-sizing:border-box;min-height:64px;resize:vertical;font:inherit;font-size:14px;line-height:1.45;color:var(--ink);background:rgba(255,255,255,.06);border:1px solid var(--edge);padding:8px 10px;border-radius:0;outline:none}
+[data-mode="light"] .fb-edit textarea{background:rgba(92,70,190,.05)}
+.fb-edit textarea:focus{border-color:var(--tide)}
+.fb-edit .fb-btns{display:flex;justify-content:flex-end;gap:6px}
+.fb-edit .fb-btns button{border:0;padding:6px 12px;font-size:12px;font-weight:700;background:rgba(255,255,255,.08);color:var(--ink)}
+.fb-edit .fb-btns .fb-save{background:var(--tide);color:var(--void)}
+@media (max-width:560px){.fb-edit textarea{font-size:16px}}
 #refreshBtn.spin svg{animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width:900px){
@@ -472,6 +492,7 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
             <div><span>Tasks cleared</span><b id="sTasks">0 / 0</b></div>
             <div><span>Deliverables</span><b id="sDeliv">0 / 0</b></div>
             <div><span>Planned time</span><b id="sTime">0m</b></div>
+            <div><span>On time</span><b id="sOnTime">—</b></div>
             <div><span>XP earned</span><b id="sXp">0</b></div>
           </div>
         </div>
@@ -995,14 +1016,26 @@ function taskHTML(k){
       </div>
       <div class="t-meta">${k.tag?`<span class="tag">#${esc(k.tag)}</span>`:""}${k.sample?`<span class="tag sample">Sample</span>`:""}<span>${esc(range)}</span></div>
       ${dl.length?`<ul class="deliv">${dl.map((x,i)=>`<li><label><input type="checkbox" data-act="deliv" data-i="${i}" ${x.d?"checked":""}><span>${esc(x.t)}</span></label></li>`).join("")}</ul>`:""}
+      ${fbHTML(k)}
       <div class="t-foot">
         <div class="t-prog"><i style="width:${pct}%"></i></div>
         ${dl.length?`<span class="t-prog-n">${dd}/${dl.length}</span>`:""}
-        <div class="t-act"><button type="button" data-act="edit">Edit</button><button type="button" data-act="del">Delete</button></div>
+        <div class="t-act"><button type="button" data-act="clone" title="Copy this task to the next day">Clone</button><button type="button" data-act="edit">Edit</button><button type="button" data-act="del">Delete</button></div>
       </div>
     </div></li>`;
 }
+const FB=[{k:"ontime",l:"On time",c:"var(--tide)"},{k:"late",l:"Late",c:"#ffb547"},{k:"partly",l:"Partly",c:"var(--violet)"},{k:"skipped",l:"Skipped",c:"var(--ember)"}];
+function fbHTML(k){
+  const fb=k.fb||{},editing=state.noteEditing===k.id;
+  let h=`<div class="t-fb" role="group" aria-label="How did it go?"><span class="fb-l">How did it go?</span>`+
+    FB.map(f=>`<button type="button" class="fb-chip${fb.s===f.k?" on":""}" data-act="fb" data-fb="${f.k}" style="--fc:${f.c}" aria-pressed="${fb.s===f.k}">${f.l}</button>`).join("")+
+    (editing?"":`<button type="button" class="fb-note-btn" data-act="fbnote">${fb.n?"Edit note":"Add note"}</button>`)+`</div>`;
+  if(editing)h+=`<div class="fb-edit"><textarea id="fbText" maxlength="500" placeholder="e.g. Finished 20 min late, the call ran over">${esc(state.noteDraft??fb.n??"")}</textarea><div class="fb-btns"><button type="button" data-act="fbcancel">Cancel</button><button type="button" class="fb-save" data-act="fbsave">Save note</button></div></div>`;
+  else if(fb.n)h+=`<p class="fb-note">${esc(fb.n)}</p>`;
+  return h;
+}
 function renderTimeline(){
+  if(state.noteEditing&&document.activeElement&&document.activeElement.id==="fbText")return;
   let list=dayTasks(state.view);
   if(state.filter==="open")list=list.filter(k=>!k.done);
   if(state.filter==="done")list=list.filter(k=>k.done);
@@ -1059,6 +1092,7 @@ function renderSide(){
   $("#sDeliv").textContent=dl.filter(x=>x.d).length+" / "+dl.length;
   $("#sTime").textContent=fmtDur(list.reduce((a,k)=>a+(k.time?(k.dur||60):0),0));
   $("#sXp").textContent=list.reduce((a,k)=>a+taskXp(k),0);
+  {const rated=list.filter(k=>k.fb&&k.fb.s);$("#sOnTime").textContent=rated.length?rated.filter(k=>k.fb.s==="ontime").length+" / "+rated.length:"—";}
 }
 function renderQuote(){
   const q=QUOTES[state.quote];
@@ -1196,6 +1230,29 @@ document.addEventListener("click",e=>{
     if(done)n.doneAt=Date.now();else delete n.doneAt;
     if(done){burst(b,k.rank);toast("+"+(RANK_XP[k.rank]||10)+" XP · "+k.title)}
     saveTask(n);
+  }else if(act==="fb"){
+    const s2=b.dataset.fb,cur=k.fb||{};
+    const fb=Object.assign({},cur,{s:cur.s===s2?"":s2,at:Date.now()});
+    const n=Object.assign({},k);if(!fb.s&&!fb.n)delete n.fb;else n.fb=fb;
+    saveTask(n);
+  }else if(act==="fbnote"){
+    state.noteEditing=k.id;state.noteDraft=(k.fb&&k.fb.n)||"";render();
+    const ta=$("#fbText");if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length)}
+  }else if(act==="fbcancel"){
+    state.noteEditing=null;state.noteDraft=null;render();
+  }else if(act==="fbsave"){
+    const v=($("#fbText")||{}).value||"";const fb=Object.assign({},k.fb||{},{n:v.trim(),at:Date.now()});
+    state.noteEditing=null;state.noteDraft=null;
+    const n=Object.assign({},k);if(!fb.s&&!fb.n)delete n.fb;else n.fb=fb;
+    saveTask(n);toast(fb.n?"Note saved":"Note removed");
+  }else if(act==="clone"){
+    const c=Object.assign({},k,{id:uid(),date:addDays(k.date,1),done:false,created:Date.now(),
+      deliverables:(k.deliverables||[]).map(d=>({t:d.t,d:false}))});
+    delete c.doneAt;delete c.sample;delete c._mem;delete c.local;delete c.updated;delete c.fb;
+    if(c.crop)c.crop=Object.assign({},c.crop);
+    saveTask(c);
+    const d=parseISO(c.date).toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"short"});
+    toast("Cloned to "+d,{label:"View",fn:()=>{state.view=c.date;render();scrollTo({top:0,behavior:"smooth"})}});
   }else if(act==="edit"){openSheet(k)}
   else if(act==="del"){
     const copy=Object.assign({},k);
@@ -1234,6 +1291,12 @@ document.addEventListener("keydown",e=>{
   else if(e.key==="t"||e.key==="T"){state.view=todayISO();render()}
 });
 
+document.addEventListener("input",e=>{if(e.target&&e.target.id==="fbText")state.noteDraft=e.target.value});
+document.addEventListener("keydown",e=>{
+  if(!e.target||e.target.id!=="fbText")return;
+  if(e.key==="Escape"){e.stopPropagation();state.noteEditing=null;state.noteDraft=null;e.target.blur();render()}
+  else if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();const s2=e.target.closest(".task").querySelector("[data-act=fbsave]");if(s2)s2.click()}
+},true);
 /* ---------- Feedback ---------- */
 let toastT;
 function toast(msg,action){
