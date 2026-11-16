@@ -226,7 +226,7 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
 .sync.on i{background:var(--tide);box-shadow:0 0 8px var(--tide)}
 
 /* Sheet */
-.overlay{position:fixed;inset:0;z-index:50;background:rgba(5,3,20,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:grid;place-items:center;padding:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-top:max(16px,env(safe-area-inset-top,0px));padding-bottom:max(16px,env(safe-area-inset-bottom,0px));overflow-y:auto}
+.overlay{grid-template-columns:minmax(0,1fr);position:fixed;inset:0;z-index:50;background:rgba(5,3,20,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:grid;place-items:center;padding:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-top:max(16px,env(safe-area-inset-top,0px));padding-bottom:max(16px,env(safe-area-inset-bottom,0px));overflow-y:auto}
 .sheet{width:100%;max-width:540px;padding:24px;--cut:20px;animation:rise .25s ease}
 .sheet::before{background:rgba(18,12,54,.96)}
 @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
@@ -342,6 +342,15 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
 .fb-edit .fb-btns button{border:0;padding:6px 12px;font-size:12px;font-weight:700;background:rgba(255,255,255,.08);color:var(--ink)}
 .fb-edit .fb-btns .fb-save{background:var(--tide);color:var(--void)}
 @media (max-width:560px){.fb-edit textarea{font-size:16px}}
+/* Confirm before deleting */
+.ask-ov{z-index:80}
+.ask{max-width:420px}
+.overlay>.sheet{min-width:0;box-sizing:border-box}
+.ask h2{font-size:20px}
+.ask p{margin:8px 0 18px;color:var(--muted);font-size:14.5px;line-height:1.5;overflow-wrap:break-word}
+.btn-danger{background:linear-gradient(135deg,#ff9bb0,var(--ember) 55%,#b3123a);color:#fff;box-shadow:0 0 20px rgba(255,92,122,.35)}
+.btn-danger:hover{filter:brightness(1.1)}
+.toast button+button{background:rgba(255,255,255,.14);color:var(--ink)}
 #refreshBtn.spin svg{animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width:900px){
@@ -604,6 +613,16 @@ kbd{font-family:var(--f-data);font-size:11px;padding:1px 6px;border:1px solid rg
       <span class="spacer"></span>
       <button type="button" class="btn btn-ghost" id="cCancel">Cancel</button>
       <button type="button" class="btn btn-primary" id="cSet">Set</button>
+    </div>
+  </div>
+</div>
+<div class="overlay ask-ov" id="askOverlay" hidden>
+  <div class="sheet shard ask" role="alertdialog" aria-modal="true" aria-labelledby="askTitle" aria-describedby="askBody">
+    <h2 id="askTitle">Delete this?</h2>
+    <p id="askBody"></p>
+    <div class="sheet-actions">
+      <button type="button" class="btn btn-ghost" id="askNo">Cancel</button>
+      <button type="button" class="btn btn-danger" id="askYes">Delete</button>
     </div>
   </div>
 </div>
@@ -1193,7 +1212,10 @@ $("#form").addEventListener("submit",e=>{
 $("#cancelBtn").addEventListener("click",closeSheet);
 $("#fThumbs").addEventListener("click",e=>{
   const d=e.target.closest("[data-unthumb]");
-  if(d){removeThumb(d.dataset.unthumb);toast("Image removed from your library");return}
+  if(d){const id=d.dataset.unthumb,used=state.tasks.filter(t=>t.thumb===id&&!t._mem).length;
+    ask({title:"Delete this image?",body:"It will be removed from your image library"+(used?" and from "+used+" task"+(used===1?"":"s")+" that use"+(used===1?"s":"")+" it":"")+"."}).then(ok=>{
+      if(!ok)return;removeThumb(id);toast("Image removed from your library");});
+    return}
   const p=e.target.closest("[data-pick]");
   if(p){const id=p.dataset.pick;
     if(!id){state.formThumb="";state.formCrop=normCrop();renderThumbPicker();renderCrop();saveDraft()}
@@ -1219,8 +1241,10 @@ document.addEventListener("click",e=>{
     toast(over.length+" task"+(over.length>1?"s":"")+" moved to today");return;
   }
   if(act==="clearSamples"){
-    state.tasks.filter(k=>k.sample).forEach(k=>removeTask(k.id));
-    toast("Samples cleared");return;
+    const n=state.tasks.filter(k=>k.sample).length;
+    ask({title:"Clear the sample tasks?",body:"This removes the "+n+" example task"+(n===1?"":"s")+". Your own tasks stay.",yes:"Clear samples"}).then(ok=>{
+      if(!ok)return;state.tasks.filter(k=>k.sample).forEach(k=>removeTask(k.id));toast("Samples cleared");
+    });return;
   }
   const li=b.closest(".task"); if(!li)return;
   const k=state.tasks.find(x=>x.id===li.dataset.id); if(!k)return;
@@ -1252,12 +1276,16 @@ document.addEventListener("click",e=>{
     if(c.crop)c.crop=Object.assign({},c.crop);
     saveTask(c);
     const d=parseISO(c.date).toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"short"});
-    toast("Cloned to "+d,{label:"View",fn:()=>{state.view=c.date;render();scrollTo({top:0,behavior:"smooth"})}});
+    toast("Cloned to "+d,{label:"Undo",fn:()=>{removeTask(c.id);toast("Clone removed")}},{label:"View",fn:()=>{state.view=c.date;render();scrollTo({top:0,behavior:"smooth"})}});
   }else if(act==="edit"){openSheet(k)}
   else if(act==="del"){
-    const copy=Object.assign({},k);
-    removeTask(k.id);
-    toast("Deleted “"+k.title+"”",{label:"Undo",fn:()=>{saveTask(copy);toast("Task restored")}});
+    const day=parseISO(k.date).toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"short"});
+    ask({title:"Delete this task?",body:"“"+k.title+"” on "+day+" will be removed, with its deliverables and feedback."}).then(ok=>{
+      if(!ok)return;
+      const copy=Object.assign({},k);
+      removeTask(k.id);
+      toast("Deleted “"+k.title+"”",{label:"Undo",fn:()=>{saveTask(copy);toast("Task restored")}});
+    });
   }
 });
 document.addEventListener("change",e=>{
@@ -1299,13 +1327,30 @@ document.addEventListener("keydown",e=>{
 },true);
 /* ---------- Feedback ---------- */
 let toastT;
-function toast(msg,action){
+function toast(msg,...actions){
   const t=$("#toast");t.textContent="";
   const s=document.createElement("span");s.textContent=msg;t.appendChild(s);
-  if(action){const b=document.createElement("button");b.type="button";b.textContent=action.label;
+  actions=actions.filter(Boolean);
+  for(const action of actions){const b=document.createElement("button");b.type="button";b.textContent=action.label;
     b.addEventListener("click",()=>{t.classList.remove("show");action.fn()},{once:true});t.appendChild(b)}
-  t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),action?6000:2400);
+  t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),actions.length?6500:2400);
 }
+/* In-app confirmation (Cancel is the default, so a stray tap or Enter never deletes) */
+const askOv=$("#askOverlay");let askDone=null;
+function ask(o){
+  return new Promise(res=>{
+    if(askDone)askDone(false);
+    const last=document.activeElement;
+    $("#askTitle").textContent=o.title;$("#askBody").textContent=o.body||"";$("#askBody").hidden=!o.body;
+    const y=$("#askYes");y.textContent=o.yes||"Delete";y.className="btn "+(o.danger===false?"btn-primary":"btn-danger");
+    askOv.hidden=false;setTimeout(()=>$("#askNo").focus(),30);
+    askDone=v=>{askDone=null;askOv.hidden=true;if(last&&last.focus&&last.isConnected)last.focus({preventScroll:true});res(v)};
+  });
+}
+$("#askNo").addEventListener("click",()=>askDone&&askDone(false));
+$("#askYes").addEventListener("click",()=>askDone&&askDone(true));
+askOv.addEventListener("click",e=>{if(e.target===askOv&&askDone)askDone(false)});
+document.addEventListener("keydown",e=>{if(!askOv.hidden){if(e.key==="Escape"){e.stopPropagation();e.preventDefault();askDone&&askDone(false)}else if(e.key!=="Tab"&&e.key!=="Enter"&&e.key!==" "){e.stopPropagation()}}},true);
 const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
 function burst(el,rank){
   if(reduce||!el)return;
@@ -1452,7 +1497,7 @@ function saveBanner(src,crop){
 const bannerEditor=(src,crop)=>openCropper({src,crop,shape:"rect",aspect:bannerAspect(),title:"Position banner",setLabel:"Set banner"});
 $("#bannerSet").addEventListener("click",()=>$("#bFile").click());
 $("#bannerAdj").addEventListener("click",async()=>{const c=await bannerEditor(state.banner,state.bannerCrop);if(c){saveBanner(state.banner,c);toast("Banner position saved")}});
-$("#bannerDel").addEventListener("click",()=>{const o={s:state.banner,c:state.bannerCrop};saveBanner("");toast("Banner removed",{label:"Undo",fn:()=>saveBanner(o.s,o.c)})});
+$("#bannerDel").addEventListener("click",async()=>{if(!await ask({title:"Remove the banner image?",body:"The banner goes back to the plain sky. You can set a new image any time.",yes:"Remove"}))return;const o={s:state.banner,c:state.bannerCrop};saveBanner("");toast("Banner removed",{label:"Undo",fn:()=>saveBanner(o.s,o.c)})});
 $("#bFile").addEventListener("change",async e=>{
   const f=e.target.files&&e.target.files[0];e.target.value="";if(!f)return;
   let src;try{src=await fileToImage(f)}catch(err){toast("Couldn't read that image. Try a JPG or PNG.");return}
@@ -1588,7 +1633,7 @@ function commitPortalPos(){
 const portalEditor=(src,crop)=>openCropper({src,crop,shape:"circle",title:"Position centerpiece",setLabel:"Set centerpiece"});
 $("#portalSet").addEventListener("click",()=>$("#pFile").click());
 $("#portalAdj").addEventListener("click",async()=>{const c=await portalEditor(state.portal,state.portalCrop);if(c){savePortal(state.portal,c);toast("Centerpiece position saved")}});
-$("#portalDel").addEventListener("click",()=>{const o={s:state.portal,c:state.portalCrop};savePortal("");toast("Centerpiece removed",{label:"Undo",fn:()=>savePortal(o.s,o.c)})});
+$("#portalDel").addEventListener("click",async()=>{if(!await ask({title:"Remove the centerpiece?",body:"The glowing circle goes back to empty. You can set a new image any time.",yes:"Remove"}))return;const o={s:state.portal,c:state.portalCrop};savePortal("");toast("Centerpiece removed",{label:"Undo",fn:()=>savePortal(o.s,o.c)})});
 $("#pFile").addEventListener("change",async e=>{const f=e.target.files&&e.target.files[0];e.target.value="";if(!f)return;
   let src;try{src=await fileToImage(f)}catch(err){toast("Couldn't read that image. Try a JPG or PNG.");return}
   const c=await portalEditor(src,null);
@@ -1786,7 +1831,8 @@ $("#sCancel").addEventListener("click",closeSync);
 syncOv.addEventListener("click",e=>{if(e.target===syncOv)closeSync()});
 document.addEventListener("keydown",e=>{if(!syncOv.hidden&&e.key==="Escape"){e.stopPropagation();closeSync()}},true);
 $("#sNow").addEventListener("click",()=>syncNow());
-$("#sDisconnect").addEventListener("click",()=>{
+$("#sDisconnect").addEventListener("click",async()=>{
+  if(!await ask({title:"Turn off sync on this device?",body:"Your planner stays on this device, but changes will no longer reach your other devices until you connect again with your access key.",yes:"Turn off"}))return;
   SY.cfg=null;SY.err="";SY.last=0;try{localStorage.removeItem(SYNC_KEY)}catch(e){}lsDel(BASE_KEY);
   syncUI();closeSync();toast("Sync turned off on this device. Your planner stays here.");
 });
@@ -1851,13 +1897,13 @@ $("#restoreFile").addEventListener("change",async e=>{
   const f=e.target.files&&e.target.files[0];e.target.value="";if(!f)return;
   let d;try{d=JSON.parse(await f.text())}catch(err){toast("That file isn't a planner backup.");return}
   if(!d||d.app!=="mos-planner"||!Array.isArray(d.tasks)){toast("That file isn't a planner backup.");return}
-  toast("Replace this device's planner with the backup ("+d.tasks.length+" tasks)?",{label:"Replace",fn:()=>{
+  if(await ask({title:"Replace this planner with the backup?",body:"Everything on this device (and, with sync on, your other devices) will be replaced by the backup from "+(d.at?new Date(d.at).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}):"the file")+", which has "+d.tasks.length+" tasks.",yes:"Replace"}))(()=>{
     state.tasks=d.tasks.map(t=>Object.assign({},t,{local:true}));persistLocal();
     state.thumbs=Array.isArray(d.thumbs)?d.thumbs:[];lsSet(LS_THUMBS,state.thumbs);
     const b=readSetting(d.banner);saveBanner(b.src,b.crop);
     const p=readSetting(d.portal);if(p.pos!=null)state.portalPos=p.pos;savePortal(p.src,p.crop);
     render();startSky();toast("Planner restored");
-  }});
+  })();
 });
 
 /* ---------- Boot ---------- */
